@@ -1,0 +1,5 @@
+workload,admission,scope,node_count,concurrency,aggregate_native_output_tok_s,aggregation,timed_runs,source_url
+short_code_prompts,regular,simultaneous_256_token_cap,8,16,598.73,median,10,https://github.com/jlacroix82/DeepSeek-V4.1-Flash-1017-SGLang-TP8-8x-DGX-Spark/blob/07d2569b71fc11899752a87721a3c79cf3afe40d/docs/VLLM_TP8_FOLLOWUP.md#completed-atomic-c16-test
+short_code_prompts,atomic,simultaneous_256_token_cap,8,16,728.27,median,10,https://github.com/jlacroix82/DeepSeek-V4.1-Flash-1017-SGLang-TP8-8x-DGX-Spark/blob/07d2569b71fc11899752a87721a3c79cf3afe40d/docs/VLLM_TP8_FOLLOWUP.md#completed-atomic-c16-test
+agentx_replay,regular,staggered_one_hour_replay,8,16,199.31,whole_replay,1,https://forums.developer.nvidia.com/t/deepseek-v4-1-flash-on-8x-dgx-spark-tp8-ep8-concurrency-results/387537/19
+agentx_replay,atomic,staggered_one_hour_replay,8,16,198.61,whole_replay,1,https://forums.developer.nvidia.com/t/deepseek-v4-1-flash-on-8x-dgx-spark-tp8-ep8-concurrency-results/387537/19
