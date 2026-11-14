@@ -2,7 +2,10 @@
 
 I run local AI on hardware I can measure. I’m interested in how long it takes to get a patch that passes tests, whether an agent’s tool calls do what they should, and what happens when several people share a model. The experiments include the settings and the evidence behind the numbers.
 
-**Start with [Lab Note 01: When batching helps local AI](notes/01-when-batching-helps.md).** Batching improved a synchronized short benchmark by 21.6%. In a separate replay of staggered agent traffic, it barely changed throughput. The note shows both results and where to find the data.
+## Lab Notes
+
+- **[02: How many Hermes workers when someone is waiting?](notes/02-hermes-worker-tradeoff.md)** Eight background workers reached the first usable foreground tool call sooner. Sixteen cleared the same background queue faster.
+- **[01: When batching helps local AI](notes/01-when-batching-helps.md)** Batching improved a synchronized short benchmark by 21.6%. In a separate replay of staggered agent traffic, it barely changed throughput.
 
 ## Find a project by hardware
 
