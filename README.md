@@ -4,6 +4,7 @@ I run local AI on hardware I can measure. I’m interested in how long it takes 
 
 ## Lab Notes
 
+- **[03: When a finished turn waits for its batch](notes/03-pico-independent-turns.md)** Independent completion reduced the warm foreground tool wait on Pico TP4 from 28.7 seconds to 0.82 seconds.
 - **[02: How many Hermes workers when someone is waiting?](notes/02-hermes-worker-tradeoff.md)** Eight background workers reached the first usable foreground tool call sooner. Sixteen cleared the same background queue faster.
 - **[01: When batching helps local AI](notes/01-when-batching-helps.md)** Batching improved a synchronized short benchmark by 21.6%. In a separate replay of staggered agent traffic, it barely changed throughput.
 

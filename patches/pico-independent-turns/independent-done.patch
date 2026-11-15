@@ -1,0 +1,214 @@
+diff --git a/ds41f-4xgx10-switchless/engine/server/cmd.cpp b/ds41f-4xgx10-switchless/engine/server/cmd.cpp
+index 30b3e3b..e0b64a5 100644
+--- a/ds41f-4xgx10-switchless/engine/server/cmd.cpp
++++ b/ds41f-4xgx10-switchless/engine/server/cmd.cpp
+@@ -403,7 +403,7 @@ DecodeEnd decode_loop(model::Model& m, const Cmd& c, Watchdog& wd, const OnSampl
+ }
+ 
+ std::vector<BatchEnd> batch_loop(model::Model& m, const Cmd& c, const std::vector<BatchEntry>& e, Watchdog& wd,
+-                                 const OnBatch& on) {
++                                 const OnBatch& on, const OnBatchEnd& on_end) {
+   g_t_wait.clear(), g_t_late.clear(), g_t_launch.clear();
+   const int n = (int)e.size(), slot0 = m.slot();
+   std::vector<BatchEnd> end(n);
+@@ -417,7 +417,10 @@ std::vector<BatchEnd> batch_loop(model::Model& m, const Cmd& c, const std::vecto
+     if (h > 0) pin.push_back(h);
+   for (int k = 0; k < n; ++k) {
+     if (e[k].handle >= 0) pin.push_back(e[k].handle);
+-    if (!may_run(k, 0)) live[k] = 0, end[k].why = e[k].max_new < 1 ? kEndLength : kEndContext;
++    if (!may_run(k, 0)) {
++      live[k] = 0, end[k].why = e[k].max_new < 1 ? kEndLength : kEndContext;
++      if (on_end) on_end(k, end[k].why);
++    }
+   }
+   m.state_pin(pin);  // the sessions' stored state, while snapshots make room
+   struct Step {
+@@ -458,6 +461,7 @@ std::vector<BatchEnd> batch_loop(model::Model& m, const Cmd& c, const std::vecto
+     end[k].why = why;
+     if (launched[k] > end[k].sampled) ending[k] = 1;
+     else live[k] = 0, end[k].fed = launched[k];
++    if (on_end) on_end(k, why);
+   };
+   launch();
+   launch();  // queued behind the first, its tokens from the device
+@@ -575,7 +579,7 @@ std::vector<float> batch_tf_loop(model::Model& m, const Cmd& c, const std::vecto
+ 
+ // B3 (cmd.h): spec_loop's accounting per entry, over batch spec steps
+ std::vector<DecodeEnd> spec_batch_loop(model::Model& m, const Cmd& c, const std::vector<BatchEntry>& e, Watchdog& wd,
+-                                       const OnBatch& on, SpecBatchStats* st) {
++                                       const OnBatch& on, SpecBatchStats* st, const OnBatchEnd& on_end) {
+   constexpr int kD = model::ops::kDrafts;
+   g_t_wait.clear(), g_t_late.clear(), g_t_launch.clear();
+   const int n = (int)e.size(), slot0 = m.slot();
+@@ -610,7 +614,10 @@ std::vector<DecodeEnd> spec_batch_loop(model::Model& m, const Cmd& c, const std:
+     nx[k].pos0 = x.pos0, nx[k].tok[0] = x.token;
+     next_snap[k] = x.snap_every > 0 ? (x.pos0 / x.snap_every + 1) * x.snap_every : INT32_MAX;
+     if (x.handle >= 0) pin.push_back(x.handle);
+-    if (x.max_new < 1 || x.pos0 >= x.limit) live[k] = 0, d.why = x.max_new < 1 ? kEndLength : kEndContext;
++    if (x.max_new < 1 || x.pos0 >= x.limit) {
++      live[k] = 0, d.why = x.max_new < 1 ? kEndLength : kEndContext;
++      if (on_end) on_end(k, d.why);
++    }
+   }
+   m.state_pin(pin);  // the sessions' stored state, while snapshots make room
+   // entry k's window snapshots up to kv_end (positions below it hold its history's KV; the ring holds
+@@ -767,6 +774,7 @@ std::vector<DecodeEnd> spec_batch_loop(model::Model& m, const Cmd& c, const std:
+         snaps(k, H[k]);
+         continue;
+       }
++      if (on_end) on_end(k, d.why);
+       ending[k] = 1;
+       if (!q.empty() && q.front().on[k]) {  // its rows in the step queued still run: the KV of its last token too
+         pend[k] = 1;
+diff --git a/ds41f-4xgx10-switchless/engine/server/cmd.h b/ds41f-4xgx10-switchless/engine/server/cmd.h
+index a5c99c4..70b5497 100644
+--- a/ds41f-4xgx10-switchless/engine/server/cmd.h
++++ b/ds41f-4xgx10-switchless/engine/server/cmd.h
+@@ -198,8 +198,10 @@ struct BatchEnd {
+   uint32_t why = kEndStop;
+ };
+ using OnBatch = std::function<void(int k, const model::SampleOut& o, int row)>;  // entry k's next token: o.row[row]
++// The entry has a stop reason. It may still have queued KV work; this observer must not touch model state.
++using OnBatchEnd = std::function<void(int k, uint32_t why)>;
+ std::vector<BatchEnd> batch_loop(model::Model& m, const Cmd& c, const std::vector<BatchEntry>& e, Watchdog& wd,
+-                                 const OnBatch& on);
++                                 const OnBatch& on, const OnBatchEnd& on_end = {});
+ 
+ // kCmdBatchTf (docs/batching.md, B4): the entries' rows teacher-forced, in steps of up to c.rows rows of each
+ // (1..model::kMaxSessRows; a step of at most kMaxRows rows in all). Entry k feeds tokens[k] (e[k].max_new of
+@@ -235,7 +237,7 @@ struct SpecBatchStats {
+   int gpu_n[model::kMaxRows + 1] = {};
+ };
+ std::vector<DecodeEnd> spec_batch_loop(model::Model& m, const Cmd& c, const std::vector<BatchEntry>& e, Watchdog& wd,
+-                                       const OnBatch& on, SpecBatchStats* st = nullptr);
++                                       const OnBatch& on, SpecBatchStats* st = nullptr, const OnBatchEnd& on_end = {});
+ 
+ // Host timeline of the last decode loop (diagnostics): per step, when its sample arrived, when the
+ // next step's Engram lookups were submitted, and when the step after was launched.
+diff --git a/ds41f-4xgx10-switchless/engine/server/main.cpp b/ds41f-4xgx10-switchless/engine/server/main.cpp
+index 53bc32a..c23ba1c 100644
+--- a/ds41f-4xgx10-switchless/engine/server/main.cpp
++++ b/ds41f-4xgx10-switchless/engine/server/main.cpp
+@@ -299,6 +299,7 @@ struct Args {
+   bool bgraph_check = false;  // DIAGNOSTICS (B3 phase 2a): the one-session draft of every entry after the batch
+                               // step's pass over them, and the words that differ, printed by --mode batch
+   int slice = 64;  // serve: time-slicing's turns, in tokens (0: none)
++  bool independent_done = false;  // serve: close a finished turn while other batch entries run
+   bool snap_all = false;
+   size_t ring_cap = 4u << 20;  // the ring's per-rank collective size (prefill's bulk collectives post cap / 4)
+   bool spec = false, no_spec = false, draft_fp8 = false, draft_bf16 = false, draft_head4 = false, draft_markov8 = false;
+@@ -394,6 +395,7 @@ Args parse(int argc, char** argv) {
+     else if (s == "--batch-tf") a.batch_tf = true;
+     else if (s == "--batch-rows") a.batch_rows = std::atoi(val().c_str());
+     else if (s == "--slice") a.slice = std::atoi(val().c_str());
++    else if (s == "--independent-done") a.independent_done = true;
+     else if (s == "--snap-all") a.snap_all = true;
+     else if (s == "--small-rows") a.small_rows = std::atoi(val().c_str());
+     else if (s == "--ring-cap") a.ring_cap = std::strtoull(val().c_str(), nullptr, 10);
+@@ -761,6 +763,7 @@ int main(int argc, char** argv) {
+     so.small_rows = a.small_rows;
+     so.snap_every = a.snap_every;
+     so.slice = a.slice;
++    so.independent_done = a.independent_done;
+     so.snap_thin = !a.snap_all;
+     so.budget = (size_t)(a.session_gib * 1073741824.0);
+     so.keep_index = disk_dir + "/server" + disk_tag + ".index";
+diff --git a/ds41f-4xgx10-switchless/engine/server/serve.cpp b/ds41f-4xgx10-switchless/engine/server/serve.cpp
+index 0957bd1..909b886 100644
+--- a/ds41f-4xgx10-switchless/engine/server/serve.cpp
++++ b/ds41f-4xgx10-switchless/engine/server/serve.cpp
+@@ -65,6 +65,7 @@
+ #include <map>
+ #include <memory>
+ #include <mutex>
++#include <optional>
+ #include <random>
+ #include <set>
+ #include <thread>
+@@ -443,6 +444,7 @@ struct Flight {
+   double t_start = 0, t_first = 0, t_paused = 0;
+   double paused_s = 0, resume_s = 0, dec_s = 0;  // waiting in turn, resuming (to each first token), decoding
+   int slices = 0, decoded = 0, batched = 0;  // runs; tokens decoded, of them in batches
++  std::optional<uint32_t> sent_done;  // terminal reason already sent to the front end
+   DecodeEnd de;                      // the slices' drafts, summed
+   double spec_tok = 1, spec_ms = 0;  // the drafts' rate (SpecRate) from slice to slice
+ };
+@@ -1220,6 +1222,14 @@ class Server {
+ 
+   static constexpr uint32_t kPaused = ~0u, kTurn = ~0u - 1;  // a run's ends that are not the request's
+ 
++  uint32_t batch_reason(const Flight& f, uint32_t why, bool cancelled) const {
++    if (cancelled || why == kEndCancel) return fe::kCancelled;
++    if (why == kEndStop || stop_id(f, f.out.back())) return fe::kStop;
++    if (why == kEndContext) return fe::kContext;
++    if ((int)f.out.size() >= (int)f.rq.h.max_new_tokens) return fe::kLength;
++    return why == kEndPause ? kPaused : kTurn;
++  }
++
+   // A run: the requests at the front of the turns, as many as there are slots, each with its session live
+   // in its slot (one that lost its slot resumes first, in a slot taken from a request further back), decode
+   // together (batch_loop, a row of each per step) or one alone (the speculative loop, with drafts). Each runs
+@@ -1402,11 +1412,25 @@ class Server {
+     std::vector<BatchEnd> end(n);
+     std::vector<DecodeEnd> dend;
+     SpecBatchStats st;
++    OnBatchEnd on_end;
++    if (o_.independent_done) on_end = [&](int k, uint32_t ended) {
++      // A pause can still emit a queued token. A slice's length limit is not necessarily the request's.
++      if (ended == kEndPause || ended == kEndCancel) return;
++      Flight& f = fl[k];
++      const uint32_t reason = batch_reason(f, ended, cancel[k]);
++      if (f.sent_done || (reason != fe::kStop && reason != fe::kLength && reason != fe::kContext)) return;
++      f.sent_done = reason;
++      done(f.rq, reason, (uint32_t)f.q, (uint32_t)f.out.size(), f.t_start, f.t_first);
++      // A queued KV row and the pinned session may still be live. finish() retains ownership and
++      // performs its usual bookkeeping after the loop returns, before admitting any follow-up.
++      std::printf("serve: req %llu independent done: reason %u, %zu tokens\n",
++                  (unsigned long long)f.rq.h.req_id, reason, f.out.size());
++    };
+     if (drafts) {
+-      dend = spec_batch_loop(m_, c, e, wd_, cb, &st);
++      dend = spec_batch_loop(m_, c, e, wd_, cb, &st, on_end);
+       for (int k = 0; k < n; ++k) end[k].sampled = dend[k].sampled, end[k].fed = dend[k].fed, end[k].why = dend[k].why;
+     } else {
+-      end = batch_loop(m_, c, e, wd_, cb);
++      end = batch_loop(m_, c, e, wd_, cb, on_end);
+     }
+     if (ctl) m_.set_ctl(0);
+     const double dt = now_s() - t_dec;
+@@ -1428,13 +1452,7 @@ class Server {
+         S[k]->hist.push_back(e[k].token);
+         S[k]->hist.insert(S[k]->hist.end(), samples[k].begin(), samples[k].begin() + std::max(0, x.fed - 1));
+       }
+-      const int max_new = (int)f.rq.h.max_new_tokens;
+-      why[k] = cancel[k] || x.why == kEndCancel                ? fe::kCancelled
+-               : x.why == kEndStop || stop_id(f, f.out.back()) ? fe::kStop
+-               : x.why == kEndContext                          ? fe::kContext
+-               : (int)f.out.size() >= max_new                  ? fe::kLength
+-               : x.why == kEndPause                            ? kPaused
+-                                                               : kTurn;
++      why[k] = f.sent_done ? *f.sent_done : batch_reason(f, x.why, cancel[k]);
+       char b[64];
+       std::snprintf(b, sizeof b, "%s%llu %d %s", k ? ", " : "", (unsigned long long)f.rq.h.req_id, x.sampled,
+                     why[k] == kPaused ? "paused" : why[k] == kTurn ? "turn" : why[k] == fe::kStop ? "stop"
+@@ -1492,7 +1510,7 @@ class Server {
+   // requests held for the session go on.
+   void finish(Flight& f, uint32_t why) {
+     const fe::SubmitHeader& h = f.rq.h;
+-    done(f.rq, why, (uint32_t)f.q, (uint32_t)f.out.size(), f.t_start, f.t_first);
++    if (!f.sent_done) done(f.rq, why, (uint32_t)f.q, (uint32_t)f.out.size(), f.t_start, f.t_first);
+     Io::forget(f.rq);
+     const double t_end = now_s();
+     flying_.erase(h.session_id);
+diff --git a/ds41f-4xgx10-switchless/engine/server/serve.h b/ds41f-4xgx10-switchless/engine/server/serve.h
+index 3210f5a..503c279 100644
+--- a/ds41f-4xgx10-switchless/engine/server/serve.h
++++ b/ds41f-4xgx10-switchless/engine/server/serve.h
+@@ -21,6 +21,7 @@ struct ServeOptions {
+   size_t budget = 12ull << 30;     // --session-gib: at most this much of the store's pool (main.cpp reserves
+                                    // it, model.h state_reserve) holds sessions' saved state; LRU eviction
+   bool ced = true;                 // CED prefill (docs/ced.md) for turns of at least 128 new positions
++  bool independent_done = false;   // send DONE for a finished batch entry before the other entries finish
+   int slice = 64;                  // time-slicing (docs/batching.md, B1): a new request pauses the requests
+                                    // decoding and is prefilled; while more of them decode than there are
+                                    // slots (Model::slots), they take turns of this many tokens. 0: no turns
