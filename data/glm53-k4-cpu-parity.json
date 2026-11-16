@@ -1,0 +1,42 @@
+{
+  "tested_on": "CPU using TensorFold reference unpack + actual TP4 slicing rules",
+  "model_revision": "e28931c918fa89403b1cd247f89c7dc25eeb67ac",
+  "rng_seed": 911,
+  "rtol": 1e-10,
+  "atol": 1e-10,
+  "cases": [
+    {
+      "projection": "gate",
+      "tensor_prefix": "model.layers.3.mlp.experts.0.gate_proj",
+      "shard": "model-00004-of-00080.safetensors",
+      "range_start": 6683452,
+      "range_end_inclusive": 12991295,
+      "passed": true,
+      "input_rows": 3,
+      "sample_bytes": 6307844,
+      "sha256_of_range": "78b0e1fcbdfcd165aef9a7ac47021e6788344c1087af72b51a28761411fc7f56",
+      "full_output_shape": [
+        3,
+        2048
+      ],
+      "max_abs_error": 0.0
+    },
+    {
+      "projection": "down",
+      "tensor_prefix": "model.layers.3.mlp.experts.0.down_proj",
+      "shard": "model-00004-of-00080.safetensors",
+      "range_start": 375608,
+      "range_end_inclusive": 6683451,
+      "passed": true,
+      "input_rows": 3,
+      "sample_bytes": 6307844,
+      "sha256_of_range": "be2ee08ef97129b824345056f74841e3e43b15a186227a5ebe7cc6e4c31fb87f",
+      "full_output_shape": [
+        3,
+        6144
+      ],
+      "max_abs_error": 1.887379141862766e-15
+    }
+  ],
+  "engine_revision": "ddfad356dc16f4d6bed9cfcc9d60cd0ebc0a3595"
+}
