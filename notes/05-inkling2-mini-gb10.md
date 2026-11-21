@@ -2,6 +2,8 @@
 
 *Lab Note 05 · November 20, 2026*
 
+See the [vision-enabled suite follow-up](#follow-up-with-vision-enabled) for the local public slices and mixed-work soak.
+
 On one GB10 with 2 GHz CPU and GPU caps, enabling DSpark raised median end-to-end output at 16 concurrent code requests from **131.0 to 191.6 tok/s**, a 46% gain. The same code workload's first-token p95 rose from **5.89 to 12.27 seconds**. Across the two modes I measured 176 timed waves, 686 request streams and 24 checked coding and tool attempts.
 
 ![Inkling 2 Mini on one GB10. Code throughput and first-token latency by concurrency, long-prompt cache replay, C4 checked work, and thermal results.](../media/inkling2-mini-gb10.png)
@@ -69,3 +71,67 @@ The guards used an 8 GiB available-memory floor, an 80°C GPU cutoff and a 90°C
 - **Output agreement** was exact on 34 of 343 pairs with matched input token IDs and greedy sampling. Within each mode, all six exact prefix replays also returned a different sequence from their cold counterpart. All 686 timed streams returned their expected token count. Across the speed campaign, aggregate engine counters recorded 61,423 accepted draft tokens out of 149,632 proposed, including warmups between timed blocks. The source of the output differences remains open.
 
 [Complete results and configuration](../data/inkling2-mini-gb10-results.json) · [Lab index](../README.md).
+
+## Follow-up with vision enabled
+
+*Seven-round benchmark suite · November 20, 2026*
+
+I reran the local serving and workflow tests with vision enabled and seven-token DSpark on the same GB10, checkpoint and image. The 20-image pilot scored **19/20**, and the balanced ChartQA test slice scored **10/24**. C16 code reached **200.1 tok/s end to end** on the fresh 1K input and 256-output-token waves.
+
+The profile used 2 GHz CPU/GPU caps, an 8 GiB available-memory floor, the 80°C GPU and 90°C ACPI cutoffs, a 32,768-token context, up to 16 active sequences and one image per request. API readiness took 183.2 s. The runtime reported 121,455 KV tokens. Chat requests used low reasoning effort, temperature zero and seed 1234. [Run identity and scorer pins](../data/inkling2-mini-gb10-suite.json).
+
+### Serving and context
+
+The native-token screen covered 88 timed waves and 343 request streams with 0 failures. The smaller interactive probes reached first token in 0.28 s at the median and 0.30 s at p95 over 24 requests.
+
+| Concurrent requests | Code output (tok/s) | Code first token p50 (s) | Docs output (tok/s) |
+| ---: | ---: | ---: | ---: |
+| 1 | 59.4 | 0.40 | 68.5 |
+| 2 | 67.0 | 0.78 | 82.3 |
+| 4 | 91.9 | 1.47 | 111.9 |
+| 8 | 147.7 | 2.87 | 141.5 |
+| 16 | 200.1 | 4.51 | 191.6 |
+
+The C16 code waves ranged from 191.0 to 210.8 tok/s and first-token p95 was 5.97 s. At 16K, exact prefix reuse moved first token from 6.10 s to 0.18 s. A short foreground request went from 0.27 s alone to 4.58 s behind three cold 4K requests. The separate checked context ladder answered **3/3** ledger questions using values across inputs of 8,209, 16,400, 30,737 actual tokens. [Serving cells](../data/inkling2-mini-gb10-suite-serving.csv).
+
+| Offered rate (req/s) | Completed rate (req/s) | Completed | First token p95 from scheduled arrival (s) |
+| ---: | ---: | ---: | ---: |
+| 0.5 | 0.41 | 24/24 | 15.28 |
+| 1 | 0.94 | 24/24 | 5.05 |
+| 2 | 1.29 | 24/24 | 2.60 |
+
+The offered-load screen used one block of 24 paced 512-input and 96-output-token requests per rate, with up to eight client workers. First-token time includes waiting after the scheduled arrival.
+
+### Vision, checked work and local public slices
+
+| Workload | Passed | Hit output cap | First token p50 (s) | Response p50 (s) |
+| --- | ---: | ---: | ---: | ---: |
+| Synthetic vision pilot | 19/20 | 0 | 0.25 | 1.15 |
+| ChartQA · 12 human and 12 augmented test cases | 10/24 | 0 | 0.28 | 2.37 |
+| BFCL v4 · reviewed simple Python calls | 20/24 | 1 | 0.39 | 5.22 |
+| IFEval · strict prompt-level | 27/32 | 4 | 0.34 | 20.11 |
+| MATH-500 · four cases per difficulty level | 19/20 | 1 | 0.32 | 8.57 |
+| HumanEval · original tasks 0–11 | 11/12 | 1 | 0.37 | 9.32 |
+
+Latency medians in this table use naturally completed requests.
+
+The pilot scored 4/4 in each of forms, charts, diagrams and counting. OCR passed 3/4. The miss changed one Greek diacritic in an otherwise correct transcription. ChartQA passed 6/12 human and 4/12 augmented cases with the pinned relaxed-accuracy scorer. The scorer counted `41.78%` against `41.78` and `4,863` against `4863` as mismatches. Images ran at one request at a time. [ChartQA](https://github.com/vis-nlp/ChartQA) · [Case receipts](../data/inkling2-mini-gb10-suite-cases.csv).
+
+IFEval also passed 27/32 prompts on loose grading and 39/47 individual instructions on strict grading. BFCL used the upstream AST checker for one streamed native function call per case. MATH-500 used boxed-answer comparison with Math-Verify. HumanEval graded one generated Python implementation per task using the original assertions in an offline CPU-only container. The text slices used four client workers. [IFEval](https://huggingface.co/datasets/google/IFEval) · [BFCL](https://gorilla.cs.berkeley.edu/leaderboard.html) · [MATH-500](https://huggingface.co/datasets/HuggingFaceH4/MATH-500) · [HumanEval](https://github.com/openai/human-eval).
+
+The NVIDIA SPEED-Bench `throughput_1k` local slice used 16 pinned Project Gutenberg prompts, four client workers and 256 native output tokens per request. It completed 16/16 at **35.8 aggregate tok/s** including prefill and queueing. The median actual prompt was 1,175 tokens. [SPEED-Bench](https://huggingface.co/datasets/nvidia/SPEED-Bench).
+
+| Local workflow workers | Passed | First complete tool p50 (s) | Checked tasks/min |
+| ---: | ---: | ---: | ---: |
+| 1 | 6/6 | 0.57 | 15.16 |
+| 4 | 6/6 | 1.00 | 21.34 |
+
+These are local slices with their actual coverage and settings. For context, Vals published 74.58% for Inkling 2 Mini on its proprietary CyberBench v1.1. [Vals CyberBench](https://www.vals.ai/benchmarks/cyber).
+
+### Mixed-work soak
+
+The 906-second soak combined cold 8K prompts, 8K prefix replays, short foreground requests and checked coding or tool jobs with up to four active streams. It completed 288/288 fixed-output requests, with 96 measured replay hits, and 94/96 checked jobs. Median foreground first token was 3.25 s. The two percentage-calculation misses failed assertions before writing a result.
+
+Across the guarded session, GPU temperature peaked at 61°C and ACPI at 64.0°C. The lowest available RAM was 42.5 GiB, and the peak sampled graphics clock was 1,982 MHz. Driver-reported GPU power integrated to 5.55 Wh over 905.2 sampled seconds of the soak. Host swap counters are in the numeric receipt.
+
+[Full suite evidence and settings](../data/inkling2-mini-gb10-suite.json) · [Public and vision case timings](../data/inkling2-mini-gb10-suite-cases.csv) · [All serving cells](../data/inkling2-mini-gb10-suite-serving.csv).
